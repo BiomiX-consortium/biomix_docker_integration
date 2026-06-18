@@ -1,0 +1,8 @@
+# Locked Python dependencies for the BiomiX base image.
+# Derived from bin/conda_env.yml; regenerate with:
+#   pip-compile docker/requirements.in --output-file docker/requirements.txt
+pandas==2.2.3
+numpy==2.2.3
+xmltodict==0.14.2
+requests==2.32.3
+pyteomics==4.7.4
