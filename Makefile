@@ -29,34 +29,42 @@ GHCR_NAMESPACE = ghcr.io/biomix-consortium
 PLATFORMS      = linux/amd64,linux/arm64
 BUILDER        = multiarch-builder
 
+# Auto-detect native arch for local builds (override: make LOCAL_PLATFORM=linux/amd64 IMG_*)
+_ARCH := $(shell uname -m)
+ifeq ($(_ARCH),arm64)
+LOCAL_PLATFORM ?= linux/arm64
+else
+LOCAL_PLATFORM ?= linux/amd64
+endif
+
 # Ensure a multi-platform buildx builder exists and is active.
 setup_buildx:
 	docker buildx create --name $(BUILDER) --driver docker-container --bootstrap --use 2>/dev/null || \
 	docker buildx use $(BUILDER)
 
-# Local single-arch builds (amd64) — for development/testing without pushing.
+# Local single-arch builds — uses native arch by default, override with LOCAL_PLATFORM=linux/amd64.
 IMG_biomix_base:
-	docker buildx build --platform linux/amd64 --load \
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
 		-f docker/biomix_base.Dockerfile -t biomix-base .
 
 IMG_biomix_transcriptomics: IMG_biomix_base
-	docker buildx build --platform linux/amd64 --load \
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
 		-f docker/biomix_transcriptomics.Dockerfile -t biomix-transcriptomics .
 
 IMG_biomix_methylomics: IMG_biomix_base
-	docker buildx build --platform linux/amd64 --load \
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
 		-f docker/biomix_methylomics.Dockerfile -t biomix-methylomics .
 
 IMG_biomix_mofa: IMG_biomix_base
-	docker buildx build --platform linux/amd64 --load \
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
 		-f docker/biomix_mofa.Dockerfile -t biomix-mofa .
 
 IMG_biomix_metabolomics: IMG_biomix_base
-	docker buildx build --platform linux/amd64 --load \
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
 		-f docker/biomix_metabolomics.Dockerfile -t biomix-metabolomics .
 
 IMG_biomix_gui: IMG_biomix_base
-	docker buildx build --platform linux/amd64 --load \
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
 		-f docker/biomix_gui.Dockerfile -t biomix-gui .
 
 # Multi-arch build and push to GHCR.
