@@ -1,6 +1,7 @@
 FROM ghcr.io/biomix-consortium/biomix-base:latest
 
 LABEL org.opencontainers.image.description="BiomiX transcriptomics image — DESeq2, edgeR, limma"
+LABEL org.opencontainers.image.source https://github.com/BiomiX-consortium/biomix_docker_integration
 
 # CRAN packages specific to transcriptomics.
 RUN Rscript -e " \

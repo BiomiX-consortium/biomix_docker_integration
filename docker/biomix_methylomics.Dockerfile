@@ -1,6 +1,7 @@
 FROM ghcr.io/biomix-consortium/biomix-base:latest
 
 LABEL org.opencontainers.image.description="BiomiX methylomics image — ChAMP"
+LABEL org.opencontainers.image.source https://github.com/BiomiX-consortium/biomix_docker_integration
 
 # CRAN packages specific to methylomics.
 RUN Rscript -e " \

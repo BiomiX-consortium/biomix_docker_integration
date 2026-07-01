@@ -1,6 +1,7 @@
 FROM ghcr.io/biomix-consortium/biomix-base:latest
 
 LABEL org.opencontainers.image.description="BiomiX GUI — Shiny frontend"
+LABEL org.opencontainers.image.source https://github.com/BiomiX-consortium/biomix_docker_integration
 
 WORKDIR /opt/biomix/BiomiX2.5
 

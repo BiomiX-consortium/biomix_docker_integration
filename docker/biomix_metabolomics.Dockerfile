@@ -1,6 +1,7 @@
 FROM ghcr.io/biomix-consortium/biomix-base:latest
 
 LABEL org.opencontainers.image.description="BiomiX metabolomics image — MSnbase, QFeatures, Spectra"
+LABEL org.opencontainers.image.source https://github.com/BiomiX-consortium/biomix_docker_integration
 
 # NOTE: the conda environment targets Bioconductor 3.22, whereas the base image
 # uses Bioconductor 3.21. Verify package compatibility before running gold tests.
