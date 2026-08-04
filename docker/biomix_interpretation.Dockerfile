@@ -1,4 +1,4 @@
-FROM ghcr.io/biomix-consortium/biomix-base:latest
+FROM ghcr.io/biomix-consortium/biomix-base:V2
 
 LABEL org.opencontainers.image.description="BiomiX interpretation image — pathway/enrichment/literature interpretation"
 LABEL org.opencontainers.image.source https://github.com/BiomiX-consortium/biomix_docker_integration

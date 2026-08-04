@@ -1,4 +1,4 @@
-FROM ghcr.io/biomix-consortium/biomix-base:latest
+FROM ghcr.io/biomix-consortium/biomix-base:V2
 
 LABEL org.opencontainers.image.description="BiomiX metabolomics image — MSnbase, QFeatures, Spectra"
 LABEL org.opencontainers.image.source https://github.com/BiomiX-consortium/biomix_docker_integration
@@ -25,6 +25,11 @@ RUN Rscript -e " \
         'future', 'furrr', 'ComplexUpset', 'bookdown', \
         'MALDIquant', 'RUnit', 'ncdf4', 'patchwork' \
     ), repos = 'https://cloud.r-project.org')"
+
+# GitHub packages specific to metabolomics.
+RUN Rscript -e " \
+    remotes::install_github('lzyacht/cmmr', upgrade = 'never'); \
+    remotes::install_github('tidymass/metpath', upgrade = 'never')"
 
 # Bioconductor packages specific to metabolomics.
 RUN Rscript -e " \
