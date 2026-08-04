@@ -1,30 +1,3 @@
-run:
-	nextflow run ./nf_workflow.nf -resume -c nextflow.config \
-		--biomix_root ./bin/BiomiX2.5 \
-		--command_dir ./test/fixtures/egas_transcriptomics_mutated_vs_unmutated \
-		--transcriptomics_matrix ./bin/BiomiX2.5/Example_dataset/EGAS00001001746/RNA_seq/EGAS00001001746_transcriptomics.tsv \
-		--metadata ./bin/BiomiX2.5/Example_dataset/EGAS00001001746/Metadata/EGAS00001001746_metadata_CLL.tsv \
-		--group_1 mutated \
-		--group_2 unmutated
-
-run_importer_workflow:
-	nextflow run ./nf_workflow_importer.nf -resume -c nextflow.config
-
-run_slurm:
-	nextflow run ./nf_workflow.nf -resume -c nextflow_slurm.config \
-		--biomix_root ./bin/NextflowModules/bin/BiomiX2.5 \
-		--command_dir ./test/fixtures/egas_transcriptomics_mutated_vs_unmutated \
-		--transcriptomics_matrix ./bin/BiomiX2.5/Example_dataset/EGAS00001001746/RNA_seq/EGAS00001001746_transcriptomics.tsv \
-		--metadata ./bin/BiomiX2.5/Example_dataset/EGAS00001001746/Metadata/EGAS00001001746_metadata_CLL.tsv \
-		--group_1 mutated \
-		--group_2 unmutated
-
-run_docker:
-	nextflow run ./nf_workflow.nf -resume -with-docker <CONTAINER NAME>
-
-init_modules:
-	git submodule update --init --recursive
-
 GHCR_NAMESPACE = ghcr.io/biomix-consortium
 PLATFORMS      = linux/amd64,linux/arm64
 BUILDER        = multiarch-builder
@@ -42,73 +15,106 @@ setup_buildx:
 	docker buildx create --name $(BUILDER) --driver docker-container --bootstrap --use 2>/dev/null || \
 	docker buildx use $(BUILDER)
 
-# Local single-arch builds — uses native arch by default, override with LOCAL_PLATFORM=linux/amd64.
+# ---------------------------------------------------------------------------
+# Local single-arch builds — uses native arch by default.
+# Tagged with the FULL image name (ghcr.io/biomix-consortium/...:V2) so that
+# generateRunnerFunction() in BiomiX_BETA.r finds them in the local cache
+# without ever needing to reach out to the registry.
+# ---------------------------------------------------------------------------
+
 IMG_biomix_base:
 	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		-f docker/biomix_base.Dockerfile -t biomix-base .
-
-IMG_biomix_transcriptomics: IMG_biomix_base
-	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		-f docker/biomix_transcriptomics.Dockerfile -t biomix-transcriptomics .
-
-IMG_biomix_methylomics: IMG_biomix_base
-	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		-f docker/biomix_methylomics.Dockerfile -t biomix-methylomics .
-
-IMG_biomix_mofa: IMG_biomix_base
-	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		-f docker/biomix_mofa.Dockerfile -t biomix-mofa .
-
-IMG_biomix_metabolomics: IMG_biomix_base
-	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		-f docker/biomix_metabolomics.Dockerfile -t biomix-metabolomics .
+		-f docker/biomix_base.Dockerfile -t $(GHCR_NAMESPACE)/biomix-base:V2 .
 
 IMG_biomix_gui: IMG_biomix_base
 	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		-f docker/biomix_gui.Dockerfile -t biomix-gui .
+		-f docker/biomix_gui.Dockerfile -t $(GHCR_NAMESPACE)/biomix-gui:V2 .
 
-# Multi-arch build and push to GHCR.
-# Child images pull biomix-base from GHCR so both architectures resolve correctly.
+IMG_biomix_transcriptomics: IMG_biomix_base
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		-f docker/biomix_transcriptomics.Dockerfile -t $(GHCR_NAMESPACE)/biomix-transcriptomics:V2 .
+
+IMG_biomix_metabolomics: IMG_biomix_base
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		-f docker/biomix_metabolomics.Dockerfile -t $(GHCR_NAMESPACE)/biomix-metabolomics:V2 .
+
+IMG_biomix_methylomics: IMG_biomix_base
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		-f docker/biomix_methylomics.Dockerfile -t $(GHCR_NAMESPACE)/biomix-methylomics:V2 .
+
+IMG_biomix_mofa_diablo: IMG_biomix_base
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		-f docker/biomix_mofa_diablo.Dockerfile -t $(GHCR_NAMESPACE)/biomix-mofa-diablo:V2 .
+
+IMG_biomix_snf_nemo: IMG_biomix_base
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		-f docker/biomix_snf_nemo.Dockerfile -t $(GHCR_NAMESPACE)/biomix-snf-nemo:V2 .
+
+IMG_biomix_interpretation: IMG_biomix_base
+	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		-f docker/biomix_interpretation.Dockerfile -t $(GHCR_NAMESPACE)/biomix-interpretation:V2 .
+
+IMG_all: IMG_biomix_base IMG_biomix_gui IMG_biomix_transcriptomics IMG_biomix_metabolomics IMG_biomix_methylomics IMG_biomix_mofa_diablo IMG_biomix_snf_nemo IMG_biomix_interpretation
+
+# ---------------------------------------------------------------------------
+# Multi-arch build and push to GHCR (organizzazione biomix-consortium,
+# tag V2 per non sovrapporsi alle immagini :latest del collega).
+# ---------------------------------------------------------------------------
+
 push_biomix_base: setup_buildx
 	docker buildx build \
 		--platform $(PLATFORMS) \
 		-f docker/biomix_base.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-base:latest \
-		--push .
-
-push_biomix_transcriptomics: setup_buildx
-	docker buildx build \
-		--platform $(PLATFORMS) \
-		-f docker/biomix_transcriptomics.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-transcriptomics:latest \
-		--push .
-
-push_biomix_methylomics: setup_buildx
-	docker buildx build \
-		--platform $(PLATFORMS) \
-		-f docker/biomix_methylomics.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-methylomics:latest \
-		--push .
-
-push_biomix_mofa: setup_buildx
-	docker buildx build \
-		--platform $(PLATFORMS) \
-		-f docker/biomix_mofa.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-mofa:latest \
-		--push .
-
-push_biomix_metabolomics: setup_buildx
-	docker buildx build \
-		--platform $(PLATFORMS) \
-		-f docker/biomix_metabolomics.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-metabolomics:latest \
+		-t $(GHCR_NAMESPACE)/biomix-base:V2 \
 		--push .
 
 push_biomix_gui: setup_buildx
 	docker buildx build \
 		--platform $(PLATFORMS) \
 		-f docker/biomix_gui.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-gui:latest \
+		-t $(GHCR_NAMESPACE)/biomix-gui:V2 \
 		--push .
 
-push_all: push_biomix_base push_biomix_transcriptomics push_biomix_methylomics push_biomix_mofa push_biomix_metabolomics push_biomix_gui
+push_biomix_transcriptomics: setup_buildx
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		-f docker/biomix_transcriptomics.Dockerfile \
+		-t $(GHCR_NAMESPACE)/biomix-transcriptomics:V2 \
+		--push .
+
+push_biomix_metabolomics: setup_buildx
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		-f docker/biomix_metabolomics.Dockerfile \
+		-t $(GHCR_NAMESPACE)/biomix-metabolomics:V2 \
+		--push .
+
+push_biomix_methylomics: setup_buildx
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		-f docker/biomix_methylomics.Dockerfile \
+		-t $(GHCR_NAMESPACE)/biomix-methylomics:V2 \
+		--push .
+
+push_biomix_mofa_diablo: setup_buildx
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		-f docker/biomix_mofa_diablo.Dockerfile \
+		-t $(GHCR_NAMESPACE)/biomix-mofa-diablo:V2 \
+		--push .
+
+push_biomix_snf_nemo: setup_buildx
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		-f docker/biomix_snf_nemo.Dockerfile \
+		-t $(GHCR_NAMESPACE)/biomix-snf-nemo:V2 \
+		--push .
+
+push_biomix_interpretation: setup_buildx
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		-f docker/biomix_interpretation.Dockerfile \
+		-t $(GHCR_NAMESPACE)/biomix-interpretation:V2 \
+		--push .
+
+push_all: push_biomix_base push_biomix_gui push_biomix_transcriptomics push_biomix_metabolomics push_biomix_methylomics push_biomix_mofa_diablo push_biomix_snf_nemo push_biomix_interpretation
