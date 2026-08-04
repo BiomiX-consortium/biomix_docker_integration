@@ -6,7 +6,7 @@ LABEL org.opencontainers.image.source https://github.com/BiomiX-consortium/biomi
 # CRAN packages specific to SNF/NEMO.
 RUN Rscript -e " \
     options(repos = c(CRAN = 'https://cloud.r-project.org')); \
-    install.packages(c('visNetwork', 'fpc', 'aricode', 'ggalluvial', 'survival', 'survminer', 'SNFtool'))"
+    install.packages(c('visNetwork', 'fpc', 'aricode', 'ggalluvial', 'survival', 'survminer', 'SNFtool', 'pheatmap', 'rlist'))"
 
 # NEMO — only available on GitHub, not CRAN.
 RUN Rscript -e " \
