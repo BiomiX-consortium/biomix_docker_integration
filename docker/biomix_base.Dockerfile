@@ -4,6 +4,7 @@ LABEL org.opencontainers.image.description="BiomiX base image — R 4.5.2, Bioco
 LABEL org.opencontainers.image.source https://github.com/BiomiX-consortium/biomix_docker_integration
 
 WORKDIR /opt/biomix
+ENV BIOMIX_RUNNING_IN_DOCKER=true
 
 COPY docker/requirements.txt .
 
