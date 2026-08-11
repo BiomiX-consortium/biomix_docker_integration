@@ -1,6 +1,7 @@
-FROM ghcr.io/biomix-consortium/biomix-base:V2
+ARG BASE_TAG=latest
+FROM ghcr.io/biomix-consortium/biomix-base:${BASE_TAG}
 
-LABEL org.opencontainers.image.description="BiomiX methylomics image — ChAMP"
+LABEL org.opencontainers.image.description "BiomiX methylomics image — ChAMP"
 LABEL org.opencontainers.image.source https://github.com/BiomiX-consortium/biomix_docker_integration
 
 # CRAN packages specific to methylomics.

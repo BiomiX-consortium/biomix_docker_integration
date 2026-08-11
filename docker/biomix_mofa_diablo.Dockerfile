@@ -1,6 +1,7 @@
-FROM ghcr.io/biomix-consortium/biomix-base:V2
+ARG BASE_TAG=latest
+FROM ghcr.io/biomix-consortium/biomix-base:${BASE_TAG}
 
-LABEL org.opencontainers.image.description="BiomiX MOFA/DIABLO image — MOFA2, DESeq2, mixOmics"
+LABEL org.opencontainers.image.description "BiomiX MOFA/DIABLO image — MOFA2, DESeq2, mixOmics"
 LABEL org.opencontainers.image.source https://github.com/BiomiX-consortium/biomix_docker_integration
 
 # CRAN packages specific to MOFA/DIABLO.

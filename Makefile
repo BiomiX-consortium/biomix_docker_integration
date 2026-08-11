@@ -31,30 +31,37 @@ IMG_biomix_base:
 
 IMG_biomix_gui: IMG_biomix_base
 	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_gui.Dockerfile -t $(GHCR_NAMESPACE)/biomix-gui:$(TAG) .
 
 IMG_biomix_transcriptomics: IMG_biomix_base
 	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_transcriptomics.Dockerfile -t $(GHCR_NAMESPACE)/biomix-transcriptomics:$(TAG) .
 
 IMG_biomix_metabolomics: IMG_biomix_base
 	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_metabolomics.Dockerfile -t $(GHCR_NAMESPACE)/biomix-metabolomics:$(TAG) .
 
 IMG_biomix_methylomics: IMG_biomix_base
 	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_methylomics.Dockerfile -t $(GHCR_NAMESPACE)/biomix-methylomics:$(TAG) .
 
 IMG_biomix_mofa_diablo: IMG_biomix_base
 	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_mofa_diablo.Dockerfile -t $(GHCR_NAMESPACE)/biomix-mofa-diablo:$(TAG) .
 
 IMG_biomix_snf_nemo: IMG_biomix_base
 	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_snf_nemo.Dockerfile -t $(GHCR_NAMESPACE)/biomix-snf-nemo:$(TAG) .
 
 IMG_biomix_interpretation: IMG_biomix_base
 	docker buildx build --platform $(LOCAL_PLATFORM) --load \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_interpretation.Dockerfile -t $(GHCR_NAMESPACE)/biomix-interpretation:$(TAG) .
 
 IMG_all: IMG_biomix_base IMG_biomix_gui IMG_biomix_transcriptomics IMG_biomix_metabolomics IMG_biomix_methylomics IMG_biomix_mofa_diablo IMG_biomix_snf_nemo IMG_biomix_interpretation
@@ -75,6 +82,7 @@ push_biomix_base: setup_buildx
 push_biomix_gui: setup_buildx
 	docker buildx build \
 		--platform $(PLATFORMS) \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_gui.Dockerfile \
 		-t $(GHCR_NAMESPACE)/biomix-gui:$(TAG) \
 		--push .
@@ -82,6 +90,7 @@ push_biomix_gui: setup_buildx
 push_biomix_transcriptomics: setup_buildx
 	docker buildx build \
 		--platform $(PLATFORMS) \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_transcriptomics.Dockerfile \
 		-t $(GHCR_NAMESPACE)/biomix-transcriptomics:$(TAG) \
 		--push .
@@ -89,6 +98,7 @@ push_biomix_transcriptomics: setup_buildx
 push_biomix_metabolomics: setup_buildx
 	docker buildx build \
 		--platform $(PLATFORMS) \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_metabolomics.Dockerfile \
 		-t $(GHCR_NAMESPACE)/biomix-metabolomics:$(TAG) \
 		--push .
@@ -96,6 +106,7 @@ push_biomix_metabolomics: setup_buildx
 push_biomix_methylomics: setup_buildx
 	docker buildx build \
 		--platform $(PLATFORMS) \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_methylomics.Dockerfile \
 		-t $(GHCR_NAMESPACE)/biomix-methylomics:$(TAG) \
 		--push .
@@ -103,6 +114,7 @@ push_biomix_methylomics: setup_buildx
 push_biomix_mofa_diablo: setup_buildx
 	docker buildx build \
 		--platform $(PLATFORMS) \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_mofa_diablo.Dockerfile \
 		-t $(GHCR_NAMESPACE)/biomix-mofa-diablo:$(TAG) \
 		--push .
@@ -110,6 +122,7 @@ push_biomix_mofa_diablo: setup_buildx
 push_biomix_snf_nemo: setup_buildx
 	docker buildx build \
 		--platform $(PLATFORMS) \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_snf_nemo.Dockerfile \
 		-t $(GHCR_NAMESPACE)/biomix-snf-nemo:$(TAG) \
 		--push .
@@ -117,6 +130,7 @@ push_biomix_snf_nemo: setup_buildx
 push_biomix_interpretation: setup_buildx
 	docker buildx build \
 		--platform $(PLATFORMS) \
+		--build-arg BASE_TAG=$(TAG) \
 		-f docker/biomix_interpretation.Dockerfile \
 		-t $(GHCR_NAMESPACE)/biomix-interpretation:$(TAG) \
 		--push .
