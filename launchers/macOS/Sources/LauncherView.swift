@@ -5,12 +5,12 @@ import UniformTypeIdentifiers
 // MARK: - Entry point
 
 @main
-struct BioMixLauncherApp: App {
+struct BiomiXLauncherApp: App {
     @StateObject private var model = LauncherModel()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        WindowGroup("BioMix Launcher") {
+        WindowGroup("BiomiX Launcher") {
             LauncherView(model: model)
                 .onAppear { delegate.model = model }
         }
@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let model, model.containerIsRunning else { return .terminateNow }
 
         let alert = NSAlert()
-        alert.messageText = "BioMix is still running."
+        alert.messageText = "BiomiX is still running."
         alert.informativeText = "Stop the session before quitting? "
             + "Leaving it running keeps the browser link working."
         alert.addButton(withTitle: "Stop and quit")
@@ -87,7 +87,7 @@ struct LauncherView: View {
         HStack(spacing: 14) {
             logo.frame(width: 52, height: 52)
             VStack(alignment: .leading, spacing: 2) {
-                Text("BioMix")
+                Text("BiomiX")
                     .font(.system(size: 22, weight: .semibold))
                 Text("Containerized analysis workspace")
                     .font(.callout)
@@ -269,7 +269,7 @@ struct LauncherView: View {
         case .starting(let detail):
             busyCard(detail, showLogButton: true)
         case .downloadingImage:
-            busyCard("Downloading the BioMix image. First run only, and it is a large download.",
+            busyCard("Downloading the BiomiX image. First run only, and it is a large download.",
                      showLogButton: false)
         case .stopping:
             busyCard("Stopping the session…", showLogButton: false)
@@ -293,7 +293,7 @@ struct LauncherView: View {
                 Button {
                     model.start()
                 } label: {
-                    Label("Start BioMix", systemImage: "play.fill").padding(.horizontal, 6)
+                    Label("Start BiomiX", systemImage: "play.fill").padding(.horizontal, 6)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.accentTeal)
@@ -309,7 +309,7 @@ struct LauncherView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 StatusDot(color: .live, pulsing: false)
-                Text("BioMix is running")
+                Text("BiomiX is running")
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 if model.usingFallbackPort {
@@ -393,7 +393,7 @@ struct LauncherView: View {
 
     private func failureCard(_ reason: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Could not start BioMix", systemImage: "exclamationmark.triangle.fill")
+            Label("Could not start BiomiX", systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color.down)
             Text(reason)

@@ -93,7 +93,7 @@ final class LauncherModel: ObservableObject {
             }
             session = .running(port: port)
         } else if session.isRunning {
-            session = .failed("The BioMix container stopped. Check the log for details.")
+            session = .failed("The BiomiX container stopped. Check the log for details.")
         }
     }
 
@@ -110,7 +110,7 @@ final class LauncherModel: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
         panel.prompt = "Use this folder"
-        panel.message = "Pick the folder BioMix should read and write. "
+        panel.message = "Pick the folder BiomiX should read and write. "
             + "It appears as \(Config.containerMountPath) inside the app."
         panel.directoryURL = dataDirectory ?? FileManager.default.homeDirectoryForCurrentUser
 
@@ -246,7 +246,7 @@ final class LauncherModel: ObservableObject {
             }
 
             self?.finish(.failed(
-                "BioMix did not answer on port \(port) within "
+                "BiomiX did not answer on port \(port) within "
                 + "\(Int(Config.startupTimeout)) seconds. It may still be loading — "
                 + "open the log to check."))
         }

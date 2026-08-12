@@ -1,10 +1,10 @@
 #!/bin/bash
-# Builds "BioMix Launcher.app" from the Swift sources in ./Sources.
+# Builds "BiomiX Launcher.app" from the Swift sources in ./Sources.
 # Requires only the Xcode Command Line Tools:  xcode-select --install
 set -euo pipefail
 
-APP_NAME="BioMix Launcher"
-EXECUTABLE="BioMixLauncher"
+APP_NAME="BiomiX Launcher"
+EXECUTABLE="BiomiXLauncher"
 BUNDLE_ID="org.biomix.launcher"
 VERSION="1.0.0"
 MIN_MACOS="13.0"
@@ -83,7 +83,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSAppleEventsUsageDescription</key>
-  <string>BioMix Launcher opens a terminal window to run the analysis container.</string>
+  <string>BiomiX Launcher opens a terminal window to run the analysis container.</string>
 $ICON_LINE
 </dict>
 </plist>

@@ -211,6 +211,7 @@ struct DockerCLI {
             // macOS "wants to find devices on your local network" prompt.
             "--publish", "127.0.0.1:\(hostPort):\(Config.containerPort)",
             "--volume", "\(dataDirectory.path):\(Config.containerMountPath)",
+            "--volume", "/var/run/docker.sock:/var/run/docker.sock"
         ]
         arguments.append(contentsOf: Config.extraRunFlags)
         arguments.append(Config.imageRef)
@@ -303,7 +304,7 @@ enum TerminalLauncher {
     static func followLogs() throws {
         let binary = DockerCLI.resolveBinary() ?? "docker"
         let command = "\(quote(binary)) logs --follow --tail 200 \(quote(Config.containerName))"
-        let title = "BioMix log"
+        let title = "BiomiX log"
 
         let script = """
         #!/bin/zsh
@@ -315,7 +316,7 @@ enum TerminalLauncher {
         """
 
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("BioMixLauncher", isDirectory: true)
+            .appendingPathComponent("BiomiXLauncher", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let file = directory.appendingPathComponent("biomix-logs.command")
         try script.write(to: file, atomically: true, encoding: .utf8)
