@@ -167,9 +167,15 @@ final class LauncherModel: ObservableObject {
         let directory = dataDirectory?.path ?? "LOCAL_DIR"
         var port = Config.preferredHostPort
         if case .running(let active) = session { port = active }
-        return "docker run -d --rm --name \(Config.containerName) "
-            + "-p \(port):\(Config.containerPort) "
-            + "-v \(directory):\(Config.containerMountPath) \(Config.imageRef)"
+        return """
+            docker run -d --rm --name \(Config.containerName) \\
+              -e BIOMIX_HOST_SHARED_PATH=\(Config.containerMountPath) \\
+              -p \(port):\(Config.containerPort) \\
+              -p 3939:3939 \\
+              -v \(directory):\(Config.containerMountPath) \\
+              -v /var/run/docker.sock:/var/run/docker.sock \\
+              \(Config.imageRef)
+            """
     }
 
     // MARK: Start

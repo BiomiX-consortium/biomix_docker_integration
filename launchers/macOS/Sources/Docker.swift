@@ -207,9 +207,9 @@ struct DockerCLI {
             "run", "--detach", "--rm",
             "--name", Config.containerName,
             "-e", "BIOMIX_RUNNING_IN_DOCKER=true",
-            // Loopback only: not reachable from the network, and it avoids the
-            // macOS "wants to find devices on your local network" prompt.
+            "-e", "BIOMIX_HOST_SHARED_PATH=\(Config.containerMountPath)",
             "--publish", "127.0.0.1:\(hostPort):\(Config.containerPort)",
+            "--publish", "127.0.0.1:3939:3939",
             "--volume", "\(dataDirectory.path):\(Config.containerMountPath)",
             "--volume", "/var/run/docker.sock:/var/run/docker.sock"
         ]
