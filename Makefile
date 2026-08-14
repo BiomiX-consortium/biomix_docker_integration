@@ -13,6 +13,19 @@ else
 LOCAL_PLATFORM ?= linux/amd64
 endif
 
+# Arch suffix used to tag native single-arch pushes (linux/arm64 -> arm64).
+ARCH_SUFFIX = $(subst linux/,,$(LOCAL_PLATFORM))
+
+# Every image except the base. Rules below match these via the % stem in
+# each family's pattern rule; biomix_base gets its own explicit rule per
+# family since it doesn't take --build-arg BASE_TAG and (for IMG_*) is a
+# prerequisite of the others rather than a dependent of itself.
+IMAGES := gui transcriptomics metabolomics methylomics mofa_diablo snf_nemo interpretation
+
+# Dockerfiles/targets use underscores (mofa_diablo); GHCR tags use dashes
+# (biomix-mofa-diablo). $(call tag_name,mofa_diablo) -> biomix-mofa-diablo.
+tag_name = biomix-$(subst _,-,$(1))
+
 # Ensure a multi-platform buildx builder exists and is active.
 setup_buildx:
 	docker buildx create --name $(BUILDER) --driver docker-container --bootstrap --use 2>/dev/null || \
@@ -29,47 +42,19 @@ IMG_biomix_base:
 	docker buildx build --platform $(LOCAL_PLATFORM) --load \
 		-f docker/biomix_base.Dockerfile -t $(GHCR_NAMESPACE)/biomix-base:$(TAG) .
 
-IMG_biomix_gui: IMG_biomix_base
+IMG_biomix_%: IMG_biomix_base
 	docker buildx build --platform $(LOCAL_PLATFORM) --load \
 		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_gui.Dockerfile -t $(GHCR_NAMESPACE)/biomix-gui:$(TAG) .
+		-f docker/biomix_$*.Dockerfile -t $(GHCR_NAMESPACE)/$(call tag_name,$*):$(TAG) .
 
-IMG_biomix_transcriptomics: IMG_biomix_base
-	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_transcriptomics.Dockerfile -t $(GHCR_NAMESPACE)/biomix-transcriptomics:$(TAG) .
-
-IMG_biomix_metabolomics: IMG_biomix_base
-	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_metabolomics.Dockerfile -t $(GHCR_NAMESPACE)/biomix-metabolomics:$(TAG) .
-
-IMG_biomix_methylomics: IMG_biomix_base
-	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_methylomics.Dockerfile -t $(GHCR_NAMESPACE)/biomix-methylomics:$(TAG) .
-
-IMG_biomix_mofa_diablo: IMG_biomix_base
-	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_mofa_diablo.Dockerfile -t $(GHCR_NAMESPACE)/biomix-mofa-diablo:$(TAG) .
-
-IMG_biomix_snf_nemo: IMG_biomix_base
-	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_snf_nemo.Dockerfile -t $(GHCR_NAMESPACE)/biomix-snf-nemo:$(TAG) .
-
-IMG_biomix_interpretation: IMG_biomix_base
-	docker buildx build --platform $(LOCAL_PLATFORM) --load \
-		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_interpretation.Dockerfile -t $(GHCR_NAMESPACE)/biomix-interpretation:$(TAG) .
-
-IMG_all: IMG_biomix_base IMG_biomix_gui IMG_biomix_transcriptomics IMG_biomix_metabolomics IMG_biomix_methylomics IMG_biomix_mofa_diablo IMG_biomix_snf_nemo IMG_biomix_interpretation
+IMG_all: IMG_biomix_base $(addprefix IMG_biomix_,$(IMAGES))
 
 # ---------------------------------------------------------------------------
 # Multi-arch build and push to GHCR (organization biomix-consortium).
-# Tag defaults to "latest"; override with `make TAG=V2 push_all` to avoid
-# overwriting :latest.
+# Builds both linux/amd64 and linux/arm64 in one buildx invocation via QEMU
+# emulation. Tag defaults to "latest"; override with `make TAG=V2 push_all`
+# to avoid overwriting :latest. Prefer push_arch_*/manifest_* (below) in CI,
+# which build each arch natively instead of emulating.
 # ---------------------------------------------------------------------------
 
 push_biomix_base: setup_buildx
@@ -79,60 +64,47 @@ push_biomix_base: setup_buildx
 		-t $(GHCR_NAMESPACE)/biomix-base:$(TAG) \
 		--push .
 
-push_biomix_gui: setup_buildx
+push_biomix_%: setup_buildx
 	docker buildx build \
 		--platform $(PLATFORMS) \
 		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_gui.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-gui:$(TAG) \
+		-f docker/biomix_$*.Dockerfile \
+		-t $(GHCR_NAMESPACE)/$(call tag_name,$*):$(TAG) \
 		--push .
 
-push_biomix_transcriptomics: setup_buildx
-	docker buildx build \
-		--platform $(PLATFORMS) \
+push_all: push_biomix_base $(addprefix push_biomix_,$(IMAGES))
+
+# ---------------------------------------------------------------------------
+# Native single-arch build and push, tagged with an arch suffix (e.g. :latest-amd64).
+# Unlike push_* above, these build only $(LOCAL_PLATFORM) — no QEMU emulation.
+# Used by CI, which runs these natively on real amd64 and arm64 runners, then
+# combines the two arch-tagged images into one multi-arch manifest with the
+# manifest_* targets below. Override LOCAL_PLATFORM to cross-build manually.
+# ---------------------------------------------------------------------------
+
+push_arch_biomix_base: setup_buildx
+	docker buildx build --platform $(LOCAL_PLATFORM) \
+		-f docker/biomix_base.Dockerfile \
+		-t $(GHCR_NAMESPACE)/biomix-base:$(TAG)-$(ARCH_SUFFIX) \
+		--push .
+
+push_arch_biomix_%: setup_buildx
+	docker buildx build --platform $(LOCAL_PLATFORM) \
 		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_transcriptomics.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-transcriptomics:$(TAG) \
+		-f docker/biomix_$*.Dockerfile \
+		-t $(GHCR_NAMESPACE)/$(call tag_name,$*):$(TAG)-$(ARCH_SUFFIX) \
 		--push .
 
-push_biomix_metabolomics: setup_buildx
-	docker buildx build \
-		--platform $(PLATFORMS) \
-		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_metabolomics.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-metabolomics:$(TAG) \
-		--push .
+push_arch_all: push_arch_biomix_base $(addprefix push_arch_biomix_,$(IMAGES))
 
-push_biomix_methylomics: setup_buildx
-	docker buildx build \
-		--platform $(PLATFORMS) \
-		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_methylomics.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-methylomics:$(TAG) \
-		--push .
+# ---------------------------------------------------------------------------
+# Merge the :$(TAG)-amd64 and :$(TAG)-arm64 images pushed above into a single
+# multi-arch manifest at :$(TAG). Run after both arches have been pushed.
+# ---------------------------------------------------------------------------
 
-push_biomix_mofa_diablo: setup_buildx
-	docker buildx build \
-		--platform $(PLATFORMS) \
-		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_mofa_diablo.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-mofa-diablo:$(TAG) \
-		--push .
+manifest_biomix_%:
+	docker buildx imagetools create -t $(GHCR_NAMESPACE)/$(call tag_name,$*):$(TAG) \
+		$(GHCR_NAMESPACE)/$(call tag_name,$*):$(TAG)-amd64 \
+		$(GHCR_NAMESPACE)/$(call tag_name,$*):$(TAG)-arm64
 
-push_biomix_snf_nemo: setup_buildx
-	docker buildx build \
-		--platform $(PLATFORMS) \
-		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_snf_nemo.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-snf-nemo:$(TAG) \
-		--push .
-
-push_biomix_interpretation: setup_buildx
-	docker buildx build \
-		--platform $(PLATFORMS) \
-		--build-arg BASE_TAG=$(TAG) \
-		-f docker/biomix_interpretation.Dockerfile \
-		-t $(GHCR_NAMESPACE)/biomix-interpretation:$(TAG) \
-		--push .
-
-push_all: push_biomix_base push_biomix_gui push_biomix_transcriptomics push_biomix_metabolomics push_biomix_methylomics push_biomix_mofa_diablo push_biomix_snf_nemo push_biomix_interpretation
+manifest_all: $(addprefix manifest_biomix_,base $(IMAGES))

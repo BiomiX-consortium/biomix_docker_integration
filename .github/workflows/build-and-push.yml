@@ -1,0 +1,139 @@
+name: Build and push images to GHCR
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Image to build ('all' rebuilds base + every derived image)"
+        type: choice
+        default: all
+        options:
+          - all
+          - base
+          - gui
+          - transcriptomics
+          - metabolomics
+          - methylomics
+          - mofa_diablo
+          - snf_nemo
+          - interpretation
+      tag:
+        description: "Image tag (defaults to latest)"
+        type: string
+        default: latest
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Decide whether biomix-base needs (re)building and which derived images to
+  # build, based on the `image` input.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      build_base: ${{ steps.plan.outputs.build_base }}
+      images: ${{ steps.plan.outputs.images }}
+    steps:
+      - id: plan
+        run: |
+          case "${{ inputs.image }}" in
+            all)
+              echo "build_base=true" >> "$GITHUB_OUTPUT"
+              echo 'images=["gui","transcriptomics","metabolomics","methylomics","mofa_diablo","snf_nemo","interpretation"]' >> "$GITHUB_OUTPUT"
+              ;;
+            base)
+              echo "build_base=true" >> "$GITHUB_OUTPUT"
+              echo 'images=[]' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "build_base=false" >> "$GITHUB_OUTPUT"
+              echo "images=[\"${{ inputs.image }}\"]" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+  # Build biomix-base natively on real amd64 and arm64 runners (no QEMU).
+  build-base:
+    needs: plan
+    if: needs.plan.outputs.build_base == 'true'
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: make TAG="$TAG" push_arch_biomix_base
+
+  # Combine the amd64 + arm64 biomix-base images into one multi-arch manifest.
+  merge-base:
+    needs: [plan, build-base]
+    if: success() && needs.plan.outputs.build_base == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: make TAG="$TAG" manifest_biomix_base
+
+  # Build each requested derived image natively on real amd64 and arm64
+  # runners. Each pulls biomix-base:$TAG from GHCR, which by this point is
+  # either the manifest just merged above, or a previously published tag.
+  build-images:
+    needs: [plan, merge-base]
+    if: success() && needs.plan.outputs.images != '[]'
+    strategy:
+      matrix:
+        image: ${{ fromJson(needs.plan.outputs.images) }}
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: make TAG="$TAG" push_arch_biomix_${{ matrix.image }}
+
+  # Combine each derived image's amd64 + arm64 push into one multi-arch manifest.
+  merge-images:
+    needs: [plan, build-images]
+    if: success() && needs.plan.outputs.images != '[]'
+    strategy:
+      matrix:
+        image: ${{ fromJson(needs.plan.outputs.images) }}
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: make TAG="$TAG" manifest_biomix_${{ matrix.image }}
