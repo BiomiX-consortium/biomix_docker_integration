@@ -2,10 +2,10 @@
 # BiomiX launcher (Windows) - simple graphical setup window.
 #
 # - Makes sure Docker Desktop is running (tries to start it automatically).
-# - Shows which BiomiX images are already downloaded, with a button to
-#   download the missing ones.
 # - Lets the user pick the data folder and (optionally) an NCBI API key.
-# - Starts BiomiX.
+# - Starts BiomiX. Docker will automatically download any image that isn't
+#   already present locally (the GUI image, and any sibling analysis image
+#   it launches during a run), so no manual download step is needed here.
 #
 # This script is meant to be launched by BiomiX_Start.bat, which passes its
 # own folder via -ScriptDir. Both files must be kept together.
@@ -36,22 +36,9 @@ trap {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-$GuiImage    = "ghcr.io/biomix-consortium/biomix-gui:V2"
+$GuiImage    = "ghcr.io/biomix-consortium/biomix-gui:latest"
 $ConfigDir   = Join-Path $env:APPDATA "BiomiX"
 $ConfigFile  = Join-Path $ConfigDir "config.json"
-
-# Images shown in the checklist. The GUI image is required to start BiomiX at
-# all; the others are used during specific analysis steps and can be pulled
-# ahead of time so the pipeline doesn't stall later.
-$RequiredImages = @(
-    @{ Name = "GUI (required)";        Image = "ghcr.io/biomix-consortium/biomix-gui:V2" },
-    @{ Name = "Transcriptomics";       Image = "ghcr.io/biomix-consortium/biomix-transcriptomics:V2" },
-    @{ Name = "Metabolomics";          Image = "ghcr.io/biomix-consortium/biomix-metabolomics:V2" },
-    @{ Name = "Methylomics";           Image = "ghcr.io/biomix-consortium/biomix-methylomics:V2" },
-    @{ Name = "MOFA / DIABLO";         Image = "ghcr.io/biomix-consortium/biomix-mofa-diablo:V2" },
-    @{ Name = "SNF / NEMO";            Image = "ghcr.io/biomix-consortium/biomix-snf-nemo:V2" },
-    @{ Name = "Interpretation";        Image = "ghcr.io/biomix-consortium/biomix-interpretation:V2" }
-)
 
 # --- Make sure Docker Desktop is running, trying to start it if not ---------
 function Test-DockerReady {
@@ -105,134 +92,17 @@ if ([string]::IsNullOrWhiteSpace($SavedFolder)) {
     $SavedFolder = Join-Path $env:USERPROFILE "Desktop\biomix_shared"
 }
 
-# --- Helper: is an image present locally? ------------------------------------
-function Test-ImagePresent {
-    param([string]$ImageRef)
-    $found = & docker images -q $ImageRef 2>$null
-    return (-not [string]::IsNullOrWhiteSpace($found))
-}
-
 # =============================================================================
 # Build the window
 # =============================================================================
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "BiomiX"
-$form.Size = New-Object System.Drawing.Size(560, 560)
+$form.Size = New-Object System.Drawing.Size(560, 280)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 
-# --- Images checklist section -------------------------------------------------
-$lblImages = New-Object System.Windows.Forms.Label
-$lblImages.Text = "BiomiX components (check the ones to download):"
-$lblImages.Location = New-Object System.Drawing.Point(15, 15)
-$lblImages.Size = New-Object System.Drawing.Size(400, 20)
-$lblImages.Font = New-Object System.Drawing.Font($lblImages.Font, [System.Drawing.FontStyle]::Bold)
-$form.Controls.Add($lblImages)
-
-$dotLabels = @{}
-$checkBoxes = @{}
-$y = 40
-foreach ($img in $RequiredImages) {
-    $dot = New-Object System.Windows.Forms.Label
-    $dot.Text = "*"
-    $dot.Location = New-Object System.Drawing.Point(20, $y)
-    $dot.Size = New-Object System.Drawing.Size(20, 20)
-    $dot.Font = New-Object System.Drawing.Font("Arial", 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($dot)
-    $dotLabels[$img.Image] = $dot
-
-    $chk = New-Object System.Windows.Forms.CheckBox
-    $chk.Text = $img.Name
-    $chk.Location = New-Object System.Drawing.Point(45, ($y + 1))
-    $chk.Size = New-Object System.Drawing.Size(480, 20)
-    # Pre-check components that are not yet downloaded, as a helpful default.
-    $chk.Checked = -not (Test-ImagePresent -ImageRef $img.Image)
-    $form.Controls.Add($chk)
-    $checkBoxes[$img.Image] = $chk
-
-    $y += 24
-}
-
-function Update-ImageDots {
-    foreach ($img in $RequiredImages) {
-        $present = Test-ImagePresent -ImageRef $img.Image
-        $dot = $dotLabels[$img.Image]
-        if ($present) {
-            $dot.Text = [char]0x25CF
-            $dot.ForeColor = [System.Drawing.Color]::ForestGreen
-        } else {
-            $dot.Text = [char]0x25CF
-            $dot.ForeColor = [System.Drawing.Color]::Firebrick
-        }
-    }
-}
-
-$logBox = New-Object System.Windows.Forms.TextBox
-$logBox.Location = New-Object System.Drawing.Point(15, ($y + 5))
-$logBox.Size = New-Object System.Drawing.Size(515, 90)
-$logBox.Multiline = $true
-$logBox.ScrollBars = "Vertical"
-$logBox.ReadOnly = $true
-$logBox.Font = New-Object System.Drawing.Font("Consolas", 8)
-$form.Controls.Add($logBox)
-$y += 100
-
-$btnPull = New-Object System.Windows.Forms.Button
-$btnPull.Text = "Download checked components"
-$btnPull.Location = New-Object System.Drawing.Point(15, $y)
-$btnPull.Size = New-Object System.Drawing.Size(240, 28)
-$form.Controls.Add($btnPull)
-
-$btnRefresh = New-Object System.Windows.Forms.Button
-$btnRefresh.Text = "Refresh"
-$btnRefresh.Location = New-Object System.Drawing.Point(265, $y)
-$btnRefresh.Size = New-Object System.Drawing.Size(100, 28)
-$form.Controls.Add($btnRefresh)
-
-$btnRefresh.Add_Click({ Update-ImageDots })
-
-$btnPull.Add_Click({
-    $btnPull.Enabled = $false
-    $btnRefresh.Enabled = $false
-    $logBox.Clear()
-
-    $anyChecked = $false
-    foreach ($img in $RequiredImages) {
-        if (-not $checkBoxes[$img.Image].Checked) { continue }
-        $anyChecked = $true
-        if (-not (Test-ImagePresent -ImageRef $img.Image)) {
-            $logBox.AppendText("Downloading: $($img.Name)...`r`n")
-            $logBox.SelectionStart = $logBox.Text.Length
-            $logBox.ScrollToCaret()
-            [System.Windows.Forms.Application]::DoEvents()
-
-            & docker pull $img.Image 2>&1 | ForEach-Object {
-                $logBox.AppendText("$_`r`n")
-                $logBox.SelectionStart = $logBox.Text.Length
-                $logBox.ScrollToCaret()
-                [System.Windows.Forms.Application]::DoEvents()
-            }
-
-            $logBox.AppendText("Done: $($img.Name)`r`n`r`n")
-            [System.Windows.Forms.Application]::DoEvents()
-        } else {
-            $logBox.AppendText("Already downloaded: $($img.Name)`r`n")
-            [System.Windows.Forms.Application]::DoEvents()
-        }
-    }
-
-    if (-not $anyChecked) {
-        $logBox.AppendText("No components were checked - nothing to download.`r`n")
-    } else {
-        $logBox.AppendText("All done.`r`n")
-    }
-    Update-ImageDots
-    $btnPull.Enabled = $true
-    $btnRefresh.Enabled = $true
-})
-
-$y += 38
+$y = 20
 
 # --- Data folder section -------------------------------------------------------
 $lbl1 = New-Object System.Windows.Forms.Label
@@ -285,6 +155,15 @@ $lbl3.Font = New-Object System.Drawing.Font($lbl3.Font.FontFamily, 8)
 $form.Controls.Add($lbl3)
 $y += 30
 
+$lbl4 = New-Object System.Windows.Forms.Label
+$lbl4.Text = "The first run will take longer while Docker downloads BiomiX components."
+$lbl4.Location = New-Object System.Drawing.Point(15, $y)
+$lbl4.Size = New-Object System.Drawing.Size(515, 18)
+$lbl4.ForeColor = [System.Drawing.Color]::Gray
+$lbl4.Font = New-Object System.Drawing.Font($lbl4.Font.FontFamily, 8)
+$form.Controls.Add($lbl4)
+$y += 30
+
 # --- Start / Cancel buttons -------------------------------------------------------
 $btnStart = New-Object System.Windows.Forms.Button
 $btnStart.Text = "Start BiomiX"
@@ -304,8 +183,6 @@ $form.CancelButton = $btnCancel
 
 $form.ClientSize = New-Object System.Drawing.Size(550, ($y + 55))
 
-Update-ImageDots
-
 $result = $form.ShowDialog()
 if ($result -ne "OK") { exit 0 }
 
@@ -320,14 +197,6 @@ if ([string]::IsNullOrWhiteSpace($SharedFolder)) {
 if (-not (Test-Path $SharedFolder)) {
     New-Item -ItemType Directory -Path $SharedFolder -Force | Out-Null
 }
-if (-not (Test-ImagePresent -ImageRef $GuiImage)) {
-    [System.Windows.Forms.MessageBox]::Show(
-        "The BiomiX GUI component has not been downloaded yet.`n`nPlease click 'Download missing components' first.",
-        "BiomiX", "OK", "Warning"
-    ) | Out-Null
-    Read-Host "Press Enter to close this window"
-    exit 1
-}
 
 # --- Save settings for next time ---------------------------------------------
 if (-not (Test-Path $ConfigDir)) { New-Item -ItemType Directory -Path $ConfigDir -Force | Out-Null }
@@ -341,6 +210,7 @@ Write-Host ""
 Write-Host "Data folder: $SharedFolder"
 Write-Host "Starting BiomiX... this window must stay open while you use BiomiX."
 Write-Host "Close this window (or press Ctrl+C) to stop it."
+Write-Host "(If this is the first run, Docker will download BiomiX components now - this can take a while.)"
 Write-Host ""
 
 # --- Open the browser automatically after a short delay ----------------------
@@ -351,7 +221,7 @@ Start-Job -ScriptBlock {
 
 # --- Build and run the docker command -----------------------------------------
 $dockerArgs = @(
-    "run", "-p", "3838:3838", "--rm", "-it",
+    "run", "-p", "3838:3838", "-p", "3839:3839", "--rm", "-it",
     "-e", "BIOMIX_HOST_SHARED_PATH=$SharedFolderDocker",
     "-v", "/var/run/docker.sock:/var/run/docker.sock",
     "-v", "${SharedFolderDocker}:/shared"
