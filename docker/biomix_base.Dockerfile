@@ -24,7 +24,7 @@ RUN git clone --depth 1 https://github.com/BiomiX-consortium/BiomiX2.5.git
 ENV PATH="/opt/py-env/bin:$PATH"
 
 # Install remotes first — needed for install_version() below.
-RUN Rscript -e "install.packages('remotes', repos='https://cloud.r-project.org')"
+RUN Rscript -e "install.packages(c('remotes','DT','pheatmap','umap'), repos='https://cloud.r-project.org')"
 
 RUN Rscript -e " \
     options(repos = c(CRAN = 'https://cloud.r-project.org')); \
