@@ -221,7 +221,7 @@ Start-Job -ScriptBlock {
 
 # --- Build and run the docker command -----------------------------------------
 $dockerArgs = @(
-    "run", "-p", "3838:3838", "-p", "3839:3839", "--rm", "-it",
+    "run", "-p", "3838:3838", "-p", "3840:3840", "--rm", "-it",
     "-e", "BIOMIX_HOST_SHARED_PATH=$SharedFolderDocker",
     "-v", "/var/run/docker.sock:/var/run/docker.sock",
     "-v", "${SharedFolderDocker}:/shared"
