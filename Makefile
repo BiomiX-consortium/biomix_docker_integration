@@ -7,7 +7,7 @@ TAG ?= latest
 
 # Auto-detect native arch for local builds (override: make LOCAL_PLATFORM=linux/amd64 IMG_*)
 _ARCH := $(shell uname -m)
-ifeq ($(_ARCH),arm64)
+ifneq (,$(filter $(_ARCH),arm64 aarch64))
 LOCAL_PLATFORM ?= linux/arm64
 else
 LOCAL_PLATFORM ?= linux/amd64
