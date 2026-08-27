@@ -20,7 +20,7 @@ ARCH_SUFFIX = $(subst linux/,,$(LOCAL_PLATFORM))
 # each family's pattern rule; biomix_base gets its own explicit rule per
 # family since it doesn't take --build-arg BASE_TAG and (for IMG_*) is a
 # prerequisite of the others rather than a dependent of itself.
-IMAGES := gui transcriptomics metabolomics methylomics mofa_diablo snf_nemo interpretation
+IMAGES := gui transcriptomics metabolomics methylomics mofa_diablo snf_nemo interpretation pramigo
 
 # Dockerfiles/targets use underscores (mofa_diablo); GHCR tags use dashes
 # (biomix-mofa-diablo). $(call tag_name,mofa_diablo) -> biomix-mofa-diablo.
