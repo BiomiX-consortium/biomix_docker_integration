@@ -70,6 +70,7 @@ struct LauncherView: View {
             VStack(alignment: .leading, spacing: 16) {
                 statusRow
                 folderPicker
+                ncbiKeyField
                 sessionArea
             }
             .padding(22)
@@ -256,6 +257,23 @@ struct LauncherView: View {
                                                      dash: model.dataDirectory == nil ? [4, 3] : []))
             )
             .opacity(model.session.isRunning ? 0.6 : 1)
+        }
+    }
+
+    // MARK: NCBI key
+
+    private var ncbiKeyField: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("NCBI API key (optional)")
+                .font(.system(size: 13, weight: .medium))
+
+            TextField("You can leave this blank and click Start BiomiX", text: $model.ncbiAPIKey)
+                .textFieldStyle(.roundedBorder)
+                .disabled(model.session.isRunning || model.session.isBusy)
+
+            Text("Speeds up PubMed searches. Get one free at ncbi.nlm.nih.gov/account/settings")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
         }
     }
 

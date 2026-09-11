@@ -202,17 +202,21 @@ struct DockerCLI {
         run(["rm", "-f", Config.containerName], timeout: 20)
     }
 
-    static func startContainer(dataDirectory: URL, hostPort: Int) -> Result {
+    static func startContainer(dataDirectory: URL, hostPort: Int, ncbiAPIKey: String = "") -> Result {
         var arguments = [
             "run", "--detach", "--rm",
             "--name", Config.containerName,
             "-e", "BIOMIX_RUNNING_IN_DOCKER=true",
-            "-e", "BIOMIX_HOST_SHARED_PATH=\(Config.containerMountPath)",
+            "-e", "BIOMIX_HOST_SHARED_PATH=\(dataDirectory.path)",
             "--publish", "127.0.0.1:\(hostPort):\(Config.containerPort)",
-            "--publish", "127.0.0.1:3939:3939",
+            "--publish", "127.0.0.1:3840:3840",
             "--volume", "\(dataDirectory.path):\(Config.containerMountPath)",
             "--volume", "/var/run/docker.sock:/var/run/docker.sock"
         ]
+        let trimmedKey = ncbiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedKey.isEmpty {
+            arguments.append(contentsOf: ["-e", "NCBI_API_KEY=\(trimmedKey)"])
+        }
         arguments.append(contentsOf: Config.extraRunFlags)
         arguments.append(Config.imageRef)
         return run(arguments, timeout: 90)

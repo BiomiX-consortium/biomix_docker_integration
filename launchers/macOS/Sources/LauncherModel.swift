@@ -34,6 +34,7 @@ final class LauncherModel: ObservableObject {
     @Published private(set) var session: SessionState = .idle
     @Published private(set) var isRefreshing = false
     @Published var dataDirectory: URL?
+    @Published var ncbiAPIKey: String = ""   // not persisted: user re-enters it every launch, by design
     @Published var lastError: String?
 
     private let dataDirectoryKey = "dataDirectoryPath"
@@ -167,11 +168,13 @@ final class LauncherModel: ObservableObject {
         let directory = dataDirectory?.path ?? "LOCAL_DIR"
         var port = Config.preferredHostPort
         if case .running(let active) = session { port = active }
+        let trimmedKey = ncbiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ncbiLine = trimmedKey.isEmpty ? "" : "  -e NCBI_API_KEY=\(trimmedKey) \\\n"
         return """
             docker run -d --rm --name \(Config.containerName) \\
-              -e BIOMIX_HOST_SHARED_PATH=\(Config.containerMountPath) \\
-              -p \(port):\(Config.containerPort) \\
-              -p 3939:3939 \\
+              -e BIOMIX_HOST_SHARED_PATH=\(directory) \\
+            \(ncbiLine)  -p \(port):\(Config.containerPort) \\
+              -p 3840:3840 \\
               -v \(directory):\(Config.containerMountPath) \\
               -v /var/run/docker.sock:/var/run/docker.sock \\
               \(Config.imageRef)
@@ -189,6 +192,7 @@ final class LauncherModel: ObservableObject {
         }
 
         lastError = nil
+        let ncbiKey = ncbiAPIKey
         let needsImage = imageIsLocal == false
         session = needsImage ? .downloadingImage : .starting("Starting the container…")
 
@@ -219,7 +223,7 @@ final class LauncherModel: ObservableObject {
                 return
             }
 
-            let run = DockerCLI.startContainer(dataDirectory: directory, hostPort: port)
+            let run = DockerCLI.startContainer(dataDirectory: directory, hostPort: port, ncbiAPIKey: ncbiKey)
             guard run.ok else {
                 self?.finish(.failed("Docker could not start the container: \(run.message)"))
                 return
