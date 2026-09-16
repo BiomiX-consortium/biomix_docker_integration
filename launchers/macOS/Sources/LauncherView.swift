@@ -38,14 +38,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            model.stopSynchronously()
-            return .terminateNow
+            // `docker stop` waits for R to shut down, which is far too long to
+            // block the main thread for, so finish the quit asynchronously.
+            model.stopWhileQuitting {
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
         case .alertSecondButtonReturn:
             return .terminateNow
         default:
             return .terminateCancel
         }
     }
+}
+
+// MARK: - View-local state
+//
+// `@State` became a macro in the macOS 26 SDK, and its implementation
+// (SwiftUIMacros) ships only inside Xcode.app — building with the Command Line
+// Tools alone, as this launcher is meant to be, fails with "plugin for module
+// 'SwiftUIMacros' not found". `State` is still a plain property wrapper
+// underneath, so wrapping it keeps view-local state working on either toolchain.
+// Use this instead of `@State` here; it behaves identically, `$name` included.
+
+@propertyWrapper
+struct ViewState<Value>: DynamicProperty {
+    private var storage: State<Value>
+
+    init(wrappedValue: Value) {
+        storage = State(wrappedValue: wrappedValue)
+    }
+
+    var wrappedValue: Value {
+        get { storage.wrappedValue }
+        nonmutating set { storage.wrappedValue = newValue }
+    }
+
+    var projectedValue: Binding<Value> { storage.projectedValue }
 }
 
 // MARK: - Palette
@@ -61,7 +90,7 @@ private extension Color {
 
 struct LauncherView: View {
     @ObservedObject var model: LauncherModel
-    @State private var isDropTarget = false
+    @ViewState private var isDropTarget = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,6 +101,9 @@ struct LauncherView: View {
                 folderPicker
                 ncbiKeyField
                 sessionArea
+                if let error = model.lastError {
+                    errorNote(error)
+                }
             }
             .padding(22)
         }
@@ -438,6 +470,35 @@ struct LauncherView: View {
         )
     }
 
+    /// Smaller problems that don't belong to the session itself — a folder that
+    /// wasn't a folder, Docker Desktop refusing to open, a log window that failed.
+    private func errorNote(_ message: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(Color.waiting)
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button {
+                model.lastError = nil
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .controlSize(.small)
+            .help("Dismiss")
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.waiting.opacity(0.10))
+        )
+    }
+
     private var commandReadout: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("Runs this command")
@@ -463,7 +524,7 @@ struct LauncherView: View {
 private struct StatusDot: View {
     let color: Color
     let pulsing: Bool
-    @State private var animate = false
+    @ViewState private var animate = false
 
     var body: some View {
         Circle()

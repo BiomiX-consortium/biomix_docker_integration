@@ -34,18 +34,24 @@ final class LauncherModel: ObservableObject {
     @Published private(set) var session: SessionState = .idle
     @Published private(set) var isRefreshing = false
     @Published var dataDirectory: URL?
-    @Published var ncbiAPIKey: String = ""   // not persisted: user re-enters it every launch, by design
+    @Published var ncbiAPIKey: String = ""
     @Published var lastError: String?
 
     private let dataDirectoryKey = "dataDirectoryPath"
+    private let ncbiAPIKeyKey = "ncbiAPIKey"
     private var pollTimer: Timer?
     private let work = DispatchQueue(label: "org.biomix.launcher.work", qos: .userInitiated)
 
     init() {
-        if let saved = UserDefaults.standard.string(forKey: dataDirectoryKey),
-           isDirectory(saved) {
+        let defaults = UserDefaults.standard
+        if let saved = defaults.string(forKey: dataDirectoryKey), isDirectory(saved) {
             dataDirectory = URL(fileURLWithPath: saved, isDirectory: true)
         }
+        // Like the Linux launcher, the key is remembered between runs so it only
+        // has to be typed once. NOTE: it is stored in plain text, in this app's
+        // preferences (~/Library/Preferences/org.biomix.launcher.plist), which is
+        // the same trade-off the Linux script makes with ~/.biomix/config.
+        ncbiAPIKey = defaults.string(forKey: ncbiAPIKeyKey) ?? ""
     }
 
     // MARK: Status polling
@@ -63,9 +69,16 @@ final class LauncherModel: ObservableObject {
     func refresh() {
         guard !isRefreshing, !session.isBusy else { return }
         isRefreshing = true
+        // Once the image is here it does not leave on its own, so stop paying for
+        // an `image inspect` process on every four-second tick.
+        let imageKnownPresent = imageIsLocal == true
+
         work.async { [weak self] in
             let daemonState = DockerCLI.daemonState()
-            let hasImage = daemonState.isReady ? DockerCLI.imageIsPresentLocally() : nil
+            var hasImage: Bool?
+            if daemonState.isReady {
+                hasImage = imageKnownPresent ? true : DockerCLI.imageIsPresentLocally()
+            }
             let container = daemonState.isReady ? DockerCLI.inspectContainer() : nil
 
             DispatchQueue.main.async {
@@ -94,7 +107,7 @@ final class LauncherModel: ObservableObject {
             }
             session = .running(port: port)
         } else if session.isRunning {
-            session = .failed("The BiomiX container stopped. Check the log for details.")
+            session = .failed("The BiomiX container stopped. Open the log for details.")
         }
     }
 
@@ -139,7 +152,11 @@ final class LauncherModel: ObservableObject {
             } else if let direct = item as? URL {
                 url = direct
             }
-            guard let url, let self, self.isDirectory(url.path) else { return }
+            guard let self else { return }
+            guard let url, self.isDirectory(url.path) else {
+                DispatchQueue.main.async { self.lastError = "That is not a folder." }
+                return
+            }
             DispatchQueue.main.async { self.setDataDirectory(url) }
         }
         return true
@@ -163,22 +180,15 @@ final class LauncherModel: ObservableObject {
         return port != Config.preferredHostPort
     }
 
-    /// Readable equivalent of what the launcher runs, shown in the window.
+    /// Readable equivalent of what the launcher runs, shown in the window. Built
+    /// from the very argument list `start()` executes, so it cannot go stale.
     var displayCommand: String {
-        let directory = dataDirectory?.path ?? "LOCAL_DIR"
         var port = Config.preferredHostPort
         if case .running(let active) = session { port = active }
-        let trimmedKey = ncbiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let ncbiLine = trimmedKey.isEmpty ? "" : "  -e NCBI_API_KEY=\(trimmedKey) \\\n"
-        return """
-            docker run -d --rm --name \(Config.containerName) \\
-              -e BIOMIX_HOST_SHARED_PATH=\(directory) \\
-            \(ncbiLine)  -p \(port):\(Config.containerPort) \\
-              -p 3840:3840 \\
-              -v \(directory):\(Config.containerMountPath) \\
-              -v /var/run/docker.sock:/var/run/docker.sock \\
-              \(Config.imageRef)
-            """
+        return DockerCLI.commandLine(
+            DockerCLI.runArguments(dataPath: dataDirectory?.path ?? "LOCAL_DIR",
+                                   hostPort: port,
+                                   ncbiAPIKey: ncbiAPIKey))
     }
 
     // MARK: Start
@@ -187,37 +197,61 @@ final class LauncherModel: ObservableObject {
         guard let directory = dataDirectory else { return }
         guard isDirectory(directory.path) else {
             dataDirectory = nil
+            UserDefaults.standard.removeObject(forKey: dataDirectoryKey)
             session = .failed("That folder no longer exists. Pick it again.")
+            return
+        }
+        guard DockerCLI.defaultSocketIsAvailable() else {
+            session = .failed(
+                "Docker is not exposing \(Config.dockerSocket), which BiomiX needs to start its "
+                + "analysis containers. In Docker Desktop, turn on Settings → Advanced → "
+                + "\"Allow the default Docker socket to be used\", then try again.")
             return
         }
 
         lastError = nil
         let ncbiKey = ncbiAPIKey
-        let needsImage = imageIsLocal == false
-        session = needsImage ? .downloadingImage : .starting("Starting the container…")
+        UserDefaults.standard.set(ncbiKey, forKey: ncbiAPIKeyKey)
+        let knownImage = imageIsLocal
+        session = .starting("Preparing…")
 
         work.async { [weak self] in
-            if needsImage {
+            guard let self else { return }
+
+            // `docker run` would pull a missing image itself, but that pull would be
+            // racing the short `docker run` timeout — so do it here, visibly.
+            if !(knownImage ?? DockerCLI.imageIsPresentLocally()) {
+                DispatchQueue.main.async { self.session = .downloadingImage }
                 let pull = DockerCLI.pullImage()
                 guard pull.ok else {
-                    self?.finish(.failed("Could not download the image: \(pull.message)"))
+                    self.finish(.failed("Could not download the image: \(pull.message)"))
                     return
                 }
-                DispatchQueue.main.async { self?.imageIsLocal = true }
-                self?.report("Starting the container…")
+                DispatchQueue.main.async { self.imageIsLocal = true }
             }
+            self.report("Starting the container…")
 
             // Clear any leftover container holding our name.
             if let existing = DockerCLI.inspectContainer() {
                 if existing.isRunning, let port = existing.hostPort {
-                    self?.finish(.running(port: port))
+                    self.finish(.running(port: port))
                     return
                 }
                 DockerCLI.removeStaleContainer()
             }
 
+            // The QC preview port is referenced by number inside BiomiX, so unlike
+            // the main port there is nothing to fall forward to.
+            guard LocalPort.isFree(Config.qcPreviewPort) else {
+                self.finish(.failed(
+                    "Port \(Config.qcPreviewPort) is in use. BiomiX serves its quality-control "
+                    + "preview there and that port cannot be moved. Quit whatever is using it "
+                    + "and try again."))
+                return
+            }
+
             guard let port = LocalPort.pickHostPort() else {
-                self?.finish(.failed(
+                self.finish(.failed(
                     "Ports \(Config.preferredHostPort)–\(Config.preferredHostPort + Config.portScanRange) "
                     + "are all in use. Quit whatever is using them and try again."))
                 return
@@ -225,18 +259,18 @@ final class LauncherModel: ObservableObject {
 
             let run = DockerCLI.startContainer(dataDirectory: directory, hostPort: port, ncbiAPIKey: ncbiKey)
             guard run.ok else {
-                self?.finish(.failed("Docker could not start the container: \(run.message)"))
+                self.finish(.failed("Docker could not start the container: \(run.message)"))
                 return
             }
 
-            self?.report("Waiting for the R session to come up…")
+            self.report("Waiting for the R session to come up…")
             let deadline = Date().addingTimeInterval(Config.startupTimeout)
             var checks = 0
 
             while Date() < deadline {
                 if LocalPort.httpIsAnswering(port: port) {
-                    self?.finish(.running(port: port))
-                    DispatchQueue.main.async { self?.openInBrowser() }
+                    self.finish(.running(port: port))
+                    DispatchQueue.main.async { self.openInBrowser() }
                     return
                 }
                 checks += 1
@@ -244,9 +278,10 @@ final class LauncherModel: ObservableObject {
                 if checks % 3 == 0 {
                     let info = DockerCLI.inspectContainer()
                     if info == nil || info?.isRunning == false {
+                        // Left in place, not removed: the log is the only thing that
+                        // explains this, and the Log button needs the container.
                         let log = DockerCLI.recentLogs(lines: 12)
-                        DockerCLI.removeStaleContainer()
-                        self?.finish(.failed(log.isEmpty
+                        self.finish(.failed(log.isEmpty
                             ? "The container exited during startup."
                             : "The container exited during startup:\n\(log.suffix(400))"))
                         return
@@ -255,7 +290,7 @@ final class LauncherModel: ObservableObject {
                 Thread.sleep(forTimeInterval: 1.5)
             }
 
-            self?.finish(.failed(
+            self.finish(.failed(
                 "BiomiX did not answer on port \(port) within "
                 + "\(Int(Config.startupTimeout)) seconds. It may still be loading — "
                 + "open the log to check."))
@@ -273,9 +308,15 @@ final class LauncherModel: ObservableObject {
         }
     }
 
-    /// Blocking stop, used when the app is quitting.
-    func stopSynchronously() {
-        DockerCLI.stopContainer()
+    /// Stops the container without blocking the main thread. Used while quitting,
+    /// paired with `NSApplication.TerminateReply.terminateLater`, so the app does
+    /// not beachball for the length of a `docker stop`.
+    func stopWhileQuitting(completion: @escaping () -> Void) {
+        session = .stopping
+        work.async {
+            DockerCLI.stopContainer()
+            DispatchQueue.main.async(execute: completion)
+        }
     }
 
     var containerIsRunning: Bool { session.isRunning }
@@ -306,7 +347,12 @@ final class LauncherModel: ObservableObject {
             lastError = "Docker Desktop is not in your Applications folder."
             return
         }
-        NSWorkspace.shared.openApplication(at: url, configuration: .init())
+        NSWorkspace.shared.openApplication(at: url, configuration: .init()) { [weak self] _, error in
+            guard let error else { return }
+            DispatchQueue.main.async {
+                self?.lastError = "Could not open Docker Desktop: \(error.localizedDescription)"
+            }
+        }
     }
 
     func downloadImage() {

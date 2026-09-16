@@ -5,8 +5,8 @@ import Darwin
 // MARK: - Configuration
 
 enum Config {
-    /// The container image to run.
-    static let imageRef = "ghcr.io/biomix-consortium/biomix-gui"
+    /// The container image to run. Tagged explicitly, like the Linux launcher.
+    static let imageRef = "ghcr.io/biomix-consortium/biomix-gui:latest"
     /// Mount point inside the container.
     static let containerMountPath = "/shared"
     /// Port the Shiny server listens on inside the container.
@@ -15,8 +15,13 @@ enum Config {
     static let preferredHostPort = 3838
     /// How many ports to try after the preferred one.
     static let portScanRange = 12
+    /// QC preview for the "Undefined" data type, served by the same container.
+    /// BiomiX links to it by number, so unlike the main port it cannot be remapped.
+    static let qcPreviewPort = 3840
     /// Fixed name, so a container left running can be adopted on next launch.
     static let containerName = "biomix-gui"
+    /// The daemon socket BiomiX uses to start its sibling analysis containers.
+    static let dockerSocket = "/var/run/docker.sock"
     /// Extra flags for `docker run`, e.g. ["--platform", "linux/amd64"].
     static let extraRunFlags: [String] = []
     /// How long to wait for Shiny to answer before giving up.
@@ -117,7 +122,9 @@ struct DockerCLI {
             drained.leave()
         }
 
+        var timedOut = false
         if finished.wait(timeout: .now() + timeout) == .timedOut {
+            timedOut = true
             process.terminate()
             if finished.wait(timeout: .now() + 2) == .timedOut {
                 kill(process.processIdentifier, SIGKILL)
@@ -129,6 +136,15 @@ struct DockerCLI {
         func text(_ data: Data) -> String {
             String(decoding: data, as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // A killed process has no meaningful exit status, and reading
+        // terminationStatus before it has actually reaped would trap, so say
+        // plainly that we gave up instead.
+        guard !timedOut else {
+            return Result(status: -1,
+                          stdout: text(outData),
+                          stderr: "docker \(arguments.first ?? "") did not finish within \(Int(timeout))s.")
         }
         return Result(status: process.terminationStatus, stdout: text(outData), stderr: text(errData))
     }
@@ -161,6 +177,16 @@ struct DockerCLI {
         return FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
     }
 
+    /// Docker Desktop only creates `/var/run/docker.sock` when "Allow the default
+    /// Docker socket to be used" is enabled. BiomiX starts its analysis containers
+    /// through that socket, and bind-mounting a path that does not exist silently
+    /// gives the container an empty directory instead — so check first, while we
+    /// can still say something useful about it. (On Linux the socket is always there,
+    /// which is why the reference script does not check.)
+    static func defaultSocketIsAvailable() -> Bool {
+        FileManager.default.fileExists(atPath: Config.dockerSocket)
+    }
+
     // MARK: Container lifecycle
 
     struct ContainerInfo {
@@ -170,48 +196,52 @@ struct DockerCLI {
     }
 
     /// Inspects the named container. Returns nil when no such container exists.
+    ///
+    /// State, mount and published port all come out of a single `docker inspect`:
+    /// this runs on every poll, and each CLI invocation costs a process spawn.
     static func inspectContainer() -> ContainerInfo? {
-        let format = "{{.State.Running}}\t"
-            + "{{range .Mounts}}{{if eq .Destination \"\(Config.containerMountPath)\"}}{{.Source}}{{end}}{{end}}"
-        let result = run(["inspect", "--format", format, Config.containerName], timeout: 12)
+        let mount = "{{range .Mounts}}{{if eq .Destination \"\(Config.containerMountPath)\"}}"
+            + "{{.Source}}{{end}}{{end}}"
+        // `range` rather than `index`: a stopped container has no port map, and
+        // ranging over nil yields nothing while indexing it aborts the template
+        // (which would read back here as "there is no such container").
+        let ports = "{{range $port, $bindings := .NetworkSettings.Ports}}"
+            + "{{if eq $port \"\(Config.containerPort)/tcp\"}}"
+            + "{{range $bindings}}{{.HostPort}} {{end}}{{end}}{{end}}"
+        let result = run(["inspect", "--format", "{{.State.Running}}\t\(mount)\t\(ports)",
+                          Config.containerName], timeout: 12)
         guard result.ok else { return nil }
 
         let fields = result.stdout.components(separatedBy: "\t")
-        let isRunning = fields.first?.trimmingCharacters(in: .whitespaces) == "true"
-        let mount = fields.count > 1 ? fields[1].trimmingCharacters(in: .whitespaces) : ""
-
-        var hostPort: Int?
-        let portResult = run(["port", Config.containerName, "\(Config.containerPort)/tcp"], timeout: 12)
-        if portResult.ok {
-            // Output looks like "127.0.0.1:3838" (possibly several lines).
-            for line in portResult.stdout.split(separator: "\n") {
-                if let value = line.split(separator: ":").last, let port = Int(value) {
-                    hostPort = port
-                    break
-                }
-            }
+        func field(_ index: Int) -> String {
+            index < fields.count ? fields[index].trimmingCharacters(in: .whitespacesAndNewlines) : ""
         }
-
-        return ContainerInfo(isRunning: isRunning,
-                             hostPort: hostPort,
-                             mountedPath: mount.isEmpty ? nil : mount)
+        let mountedPath = field(1)
+        return ContainerInfo(isRunning: field(0) == "true",
+                             hostPort: field(2).split(separator: " ").compactMap { Int($0) }.first,
+                             mountedPath: mountedPath.isEmpty ? nil : mountedPath)
     }
 
     /// Removes a leftover container using our name so a fresh start can proceed.
     static func removeStaleContainer() {
-        run(["rm", "-f", Config.containerName], timeout: 20)
+        run(["rm", "--force", Config.containerName], timeout: 20)
     }
 
-    static func startContainer(dataDirectory: URL, hostPort: Int, ncbiAPIKey: String = "") -> Result {
+    /// The exact `docker run` invocation. The window shows a rendering of this same
+    /// array, so what the user reads can never drift from what actually runs.
+    ///
+    /// Deliberately no `--rm`: the container is detached, so when it dies during
+    /// startup an auto-removed container would take its log — the one thing that
+    /// explains the failure — with it. Leftovers are removed on the next start.
+    static func runArguments(dataPath: String, hostPort: Int, ncbiAPIKey: String) -> [String] {
         var arguments = [
-            "run", "--detach", "--rm",
+            "run", "--detach",
             "--name", Config.containerName,
-            "-e", "BIOMIX_RUNNING_IN_DOCKER=true",
-            "-e", "BIOMIX_HOST_SHARED_PATH=\(dataDirectory.path)",
+            "-e", "BIOMIX_HOST_SHARED_PATH=\(dataPath)",
             "--publish", "127.0.0.1:\(hostPort):\(Config.containerPort)",
-            "--publish", "127.0.0.1:3840:3840",
-            "--volume", "\(dataDirectory.path):\(Config.containerMountPath)",
-            "--volume", "/var/run/docker.sock:/var/run/docker.sock"
+            "--publish", "127.0.0.1:\(Config.qcPreviewPort):\(Config.qcPreviewPort)",
+            "--volume", "\(dataPath):\(Config.containerMountPath)",
+            "--volume", "\(Config.dockerSocket):\(Config.dockerSocket)",
         ]
         let trimmedKey = ncbiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedKey.isEmpty {
@@ -219,19 +249,54 @@ struct DockerCLI {
         }
         arguments.append(contentsOf: Config.extraRunFlags)
         arguments.append(Config.imageRef)
-        return run(arguments, timeout: 90)
+        return arguments
     }
 
+    static func startContainer(dataDirectory: URL, hostPort: Int, ncbiAPIKey: String = "") -> Result {
+        run(runArguments(dataPath: dataDirectory.path, hostPort: hostPort, ncbiAPIKey: ncbiAPIKey),
+            timeout: 90)
+    }
+
+    @discardableResult
     static func stopContainer() -> Result {
         run(["stop", "--time", "8", Config.containerName], timeout: 40)
     }
 
     static func recentLogs(lines: Int = 40) -> String {
         let result = run(["logs", "--tail", "\(lines)", Config.containerName], timeout: 15)
-        let combined = [result.stdout, result.stderr]
+        return [result.stdout, result.stderr]
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
-        return combined
+    }
+
+    // MARK: Rendering
+
+    /// A copy-pasteable rendering of an argument list, one flag per line.
+    static func commandLine(_ arguments: [String]) -> String {
+        var groups: [[String]] = []
+        for argument in arguments {
+            if argument.hasPrefix("-") {
+                groups.append([argument])
+            } else if let last = groups.last, last.count == 1, last[0].hasPrefix("-") {
+                groups[groups.count - 1].append(argument)   // a flag and its value
+            } else {
+                groups.append([argument])
+            }
+        }
+        let lines = groups.map { $0.map(shellEscaped).joined(separator: " ") }
+        guard let subcommand = lines.first else { return "docker" }
+        return (["docker " + subcommand] + lines.dropFirst().map { "  " + $0 })
+            .joined(separator: " \\\n")
+    }
+
+    private static let shellSafe = CharacterSet(
+        charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./:=+,@")
+
+    static func shellEscaped(_ value: String) -> String {
+        guard !value.isEmpty else { return "''" }
+        return value.unicodeScalars.allSatisfy(shellSafe.contains)
+            ? value
+            : TerminalLauncher.quote(value)
     }
 }
 
@@ -244,6 +309,11 @@ enum LocalPort {
         let descriptor = socket(AF_INET, SOCK_STREAM, 0)
         guard descriptor >= 0 else { return false }
         defer { close(descriptor) }
+
+        // Docker's port proxy sets SO_REUSEADDR too. Without it a socket still in
+        // TIME_WAIT from a previous session reads as "in use" when it is not.
+        var reuse: Int32 = 1
+        setsockopt(descriptor, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
 
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -260,9 +330,13 @@ enum LocalPort {
     }
 
     /// The preferred port if free, otherwise the next free one above it.
+    ///
+    /// The scan range covers the QC preview port, which the same container already
+    /// publishes — handing it out here would make `docker run` collide with itself.
     static func pickHostPort() -> Int? {
         let start = Config.preferredHostPort
-        for candidate in start...(start + Config.portScanRange) where isFree(candidate) {
+        for candidate in start...(start + Config.portScanRange)
+        where candidate != Config.qcPreviewPort && isFree(candidate) {
             return candidate
         }
         return nil
@@ -284,6 +358,7 @@ enum LocalPort {
         task.resume()
         if waiter.wait(timeout: .now() + timeout + 1) == .timedOut {
             task.cancel()
+            return false
         }
         return box.answered
     }
