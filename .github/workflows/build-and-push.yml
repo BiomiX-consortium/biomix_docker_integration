@@ -17,6 +17,7 @@ on:
           - mofa_diablo
           - snf_nemo
           - interpretation
+          - pramigo
       tag:
         description: "Image tag (defaults to latest)"
         type: string
@@ -40,7 +41,7 @@ jobs:
           case "${{ inputs.image }}" in
             all)
               echo "build_base=true" >> "$GITHUB_OUTPUT"
-              echo 'images=["gui","transcriptomics","metabolomics","methylomics","mofa_diablo","snf_nemo","interpretation"]' >> "$GITHUB_OUTPUT"
+              echo 'images=["gui","transcriptomics","metabolomics","methylomics","mofa_diablo","snf_nemo","interpretation","pramigo"]' >> "$GITHUB_OUTPUT"
               ;;
             base)
               echo "build_base=true" >> "$GITHUB_OUTPUT"
