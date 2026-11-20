@@ -96,9 +96,12 @@ jobs:
   # Build each requested derived image natively on real amd64 and arm64
   # runners. Each pulls biomix-base:$TAG from GHCR, which by this point is
   # either the manifest just merged above, or a previously published tag.
+  # !failure() (instead of success()) so this job still runs when the base
+  # jobs were *skipped* (single-image builds); it is still skipped if a base
+  # job failed or the run was cancelled. With image=all nothing changes.
   build-images:
     needs: [plan, merge-base]
-    if: success() && needs.plan.outputs.images != '[]'
+    if: ${{ !failure() && !cancelled() && needs.plan.outputs.images != '[]' }}
     strategy:
       matrix:
         image: ${{ fromJson(needs.plan.outputs.images) }}
