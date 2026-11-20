@@ -6,7 +6,7 @@ set -euo pipefail
 APP_NAME="BiomiX Launcher"
 EXECUTABLE="BiomiXLauncher"
 BUNDLE_ID="org.biomix.launcher"
-VERSION="1.0.0"
+VERSION="1.0.1"
 MIN_MACOS="13.0"
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
