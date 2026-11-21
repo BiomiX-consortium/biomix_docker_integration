@@ -124,9 +124,11 @@ jobs:
       - run: make TAG="$TAG" push_arch_biomix_${{ matrix.image }}
 
   # Combine each derived image's amd64 + arm64 push into one multi-arch manifest.
+  # Same !failure() logic as build-images: success() would also count the
+  # skipped base jobs upstream and skip this job on single-image builds.
   merge-images:
     needs: [plan, build-images]
-    if: success() && needs.plan.outputs.images != '[]'
+    if: ${{ !failure() && !cancelled() && needs.plan.outputs.images != '[]' }}
     strategy:
       matrix:
         image: ${{ fromJson(needs.plan.outputs.images) }}
